@@ -1,3 +1,7 @@
+# Extrnded USB host support
+Fork of chegewara's EspTinyUSB library, adding extra functionality to the USB Host wrapper.
+
+
 # New version
 New version of library, compatible with esp-idf (after cleanup) can be find here:
 
