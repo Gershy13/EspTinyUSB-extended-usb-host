@@ -1,6 +1,8 @@
 #pragma once
 #include "mscusb.h"
+#include "FS.h"
 #include "SD.h"
+#include "SPI.h"
 
 #if CFG_TUD_MSC
 
