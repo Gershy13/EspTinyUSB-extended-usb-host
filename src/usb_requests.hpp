@@ -12,6 +12,71 @@
 #define SET_CONTROL_LINE_STATE 0x22
 // #define SERIAL_STATE    0x20
 
+// Control Transfer Setup Packet Helpers
+#define USB_SETUP_PACKET_INIT_GET_STATUS(setup_pkt_ptr) ({  \
+    (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE; \
+    (setup_pkt_ptr)->bRequest = USB_B_REQUEST_GET_STATUS;    \
+    (setup_pkt_ptr)->wValue = 0; \
+    (setup_pkt_ptr)->wIndex = 0;    \
+    (setup_pkt_ptr)->wLength = 2;    \
+})
+
+#define USB_SETUP_PACKET_INIT_SET_ADDR(setup_pkt_ptr, addr) ({  \
+    (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE; \
+    (setup_pkt_ptr)->bRequest = USB_B_REQUEST_SET_ADDRESS;    \
+    (setup_pkt_ptr)->wValue = (addr); \
+    (setup_pkt_ptr)->wIndex = 0;    \
+    (setup_pkt_ptr)->wLength = 0;    \
+})
+
+#define USB_SETUP_PACKET_INIT_GET_DEVICE_DESC(setup_pkt_ptr) ({  \
+    (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE; \
+    (setup_pkt_ptr)->bRequest = USB_B_REQUEST_GET_DESCRIPTOR;    \
+    (setup_pkt_ptr)->wValue = (USB_W_VALUE_DT_DEVICE << 8) | 0; \
+    (setup_pkt_ptr)->wIndex = 0;    \
+    (setup_pkt_ptr)->wLength = USB_DEVICE_DESC_SIZE;    \
+})
+
+#define USB_SETUP_PACKET_INIT_GET_CONFIG(setup_pkt_ptr) ({  \
+    (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE; \
+    (setup_pkt_ptr)->bRequest = USB_B_REQUEST_GET_CONFIGURATION;    \
+    (setup_pkt_ptr)->wValue = 0; \
+    (setup_pkt_ptr)->wIndex = 0;    \
+    (setup_pkt_ptr)->wLength = 1;    \
+})
+
+#define USB_SETUP_PACKET_INIT_GET_CONFIG_DESC(setup_pkt_ptr, desc_index, desc_len) ({  \
+    (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE; \
+    (setup_pkt_ptr)->bRequest = USB_B_REQUEST_GET_DESCRIPTOR;    \
+    (setup_pkt_ptr)->wValue = (USB_W_VALUE_DT_CONFIG << 8) | (desc_index); \
+    (setup_pkt_ptr)->wIndex = 0;    \
+    (setup_pkt_ptr)->wLength = (desc_len);    \
+})
+
+#define USB_SETUP_PACKET_INIT_SET_CONFIG(setup_pkt_ptr, config_num) ({  \
+    (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE; \
+    (setup_pkt_ptr)->bRequest = USB_B_REQUEST_SET_CONFIGURATION;    \
+    (setup_pkt_ptr)->wValue = (config_num); \
+    (setup_pkt_ptr)->wIndex = 0;    \
+    (setup_pkt_ptr)->wLength = 0;    \
+})
+
+#define USB_SETUP_PACKET_INIT_SET_INTERFACE(setup_pkt_ptr, intf_num, alt_setting_num) ({  \
+    (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_INTERFACE; \
+    (setup_pkt_ptr)->bRequest = USB_B_REQUEST_SET_INTERFACE;    \
+    (setup_pkt_ptr)->wValue = (alt_setting_num); \
+    (setup_pkt_ptr)->wIndex = (intf_num);    \
+    (setup_pkt_ptr)->wLength = 0;    \
+})
+
+#define USB_SETUP_PACKET_INIT_GET_STR_DESC(setup_pkt_ptr, string_index, lang_id, desc_len) ({  \
+    (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE; \
+    (setup_pkt_ptr)->bRequest = USB_B_REQUEST_GET_DESCRIPTOR;    \
+    (setup_pkt_ptr)->wValue = (USB_W_VALUE_DT_STRING << 8) | (string_index); \
+    (setup_pkt_ptr)->wIndex = (lang_id);    \
+    (setup_pkt_ptr)->wLength = (desc_len);    \
+})
+
 #define MSC_SCSI_REQ_INIT_RESET(setup_pkt_ptr, intf_num) ({  \
     (setup_pkt_ptr)->bmRequestType = USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_CLASS | USB_BM_REQUEST_TYPE_RECIP_INTERFACE; \
     (setup_pkt_ptr)->bRequest = 0xFF;    \
