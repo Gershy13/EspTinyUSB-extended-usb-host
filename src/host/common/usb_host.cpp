@@ -109,6 +109,10 @@ USBhost::~USBhost()
         usb_host_client_deregister(client_hdl);
         client_hdl = nullptr;
     }
+    
+    // Free control transfer if allocated
+    freeControlTransfer();
+    
     // Note: usb_host_uninstall() is not called here since the app may have other clients.
 }
 
@@ -192,6 +196,8 @@ void USBhost::close()
         ESP_LOGI(TAG, "close: no device to close");
         return;
     }
+
+    // No need to free control transfer - they are allocated per request
 
     esp_err_t err = usb_host_device_close(client_hdl, dev_hdl);
     if (err != ESP_OK) {
@@ -288,3 +294,293 @@ usb_device_handle_t USBhost::deviceHandle()
 }
 
 // bool USBhost::setConfiguration(uint8_t); // still not implemented here
+
+// -------- Control Transfer Methods ----------
+
+bool USBhost::allocateControlTransfer(size_t data_buffer_size)
+{
+    // Deprecated method - transfers are now allocated per request
+    ESP_LOGW(TAG, "allocateControlTransfer is deprecated - transfers are allocated per request");
+    return true; // Always return true since allocation happens in sendControlTransfer
+}
+
+void USBhost::freeControlTransfer()
+{
+    // Deprecated method - transfers are now freed automatically after completion
+    ESP_LOGW(TAG, "freeControlTransfer is deprecated - transfers are freed automatically");
+}
+
+esp_err_t USBhost::sendControlTransfer(const usb_setup_packet_t *setup_pkt, 
+                                       const void *data, 
+                                       size_t data_len,
+                                       usb_transfer_cb_t callback,
+                                       void *context)
+{
+    if (!dev_hdl) {
+        ESP_LOGE(TAG, "sendControlTransfer: no device handle");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!setup_pkt) {
+        ESP_LOGE(TAG, "sendControlTransfer: null setup packet");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Allocate transfer for this specific control transfer
+    size_t total_buffer_size = sizeof(usb_setup_packet_t) + data_len;
+    usb_transfer_t *transfer = nullptr;
+    esp_err_t err = usb_host_transfer_alloc(total_buffer_size, 0, &transfer);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "usb_host_transfer_alloc failed: %d", err);
+        return err;
+    }
+
+    // Configure transfer
+    transfer->device_handle = dev_hdl;
+    transfer->bEndpointAddress = 0; // Control endpoint
+
+    // Copy setup packet to transfer buffer
+    memcpy(transfer->data_buffer, setup_pkt, sizeof(usb_setup_packet_t));
+    
+    // Copy data if provided
+    if (data && data_len > 0) {
+        memcpy(transfer->data_buffer + sizeof(usb_setup_packet_t), data, data_len);
+    }
+
+    // Set transfer parameters
+    transfer->num_bytes = sizeof(usb_setup_packet_t) + data_len;
+    transfer->callback = callback;
+    transfer->context = context;
+
+    // Submit the control transfer
+    err = usb_host_transfer_submit_control(client_hdl, transfer);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "usb_host_transfer_submit_control failed: %d", err);
+        usb_host_transfer_free(transfer);
+    } else {
+        ESP_LOGI(TAG, "Control transfer submitted (request: 0x%02x, length: %zu)", 
+                 setup_pkt->bRequest, data_len);
+    }
+
+    return err;
+}
+
+esp_err_t USBhost::sendControlTransfer(uint8_t bmRequestType, uint8_t bRequest, 
+                                       uint16_t wValue, uint16_t wIndex, uint16_t wLength,
+                                       const void *data,
+                                       usb_transfer_cb_t callback,
+                                       void *context)
+{
+    usb_setup_packet_t setup_pkt;
+    setup_pkt.bmRequestType = bmRequestType;
+    setup_pkt.bRequest = bRequest;
+    setup_pkt.wValue = wValue;
+    setup_pkt.wIndex = wIndex;
+    setup_pkt.wLength = wLength;
+
+    return sendControlTransfer(&setup_pkt, data, wLength, callback, context);
+}
+
+esp_err_t USBhost::getDescriptor(uint8_t desc_type, uint8_t desc_index, 
+                                 uint16_t lang_id, uint16_t length,
+                                 usb_transfer_cb_t callback, void *context)
+{
+    uint16_t wValue = (desc_type << 8) | desc_index;
+    return sendControlTransfer(
+        USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE,
+        USB_B_REQUEST_GET_DESCRIPTOR,
+        wValue,
+        lang_id,
+        length,
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::setAddress(uint8_t address, 
+                              usb_transfer_cb_t callback, void *context)
+{
+    return sendControlTransfer(
+        USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE,
+        USB_B_REQUEST_SET_ADDRESS,
+        address,
+        0,
+        0,
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::setConfiguration(uint8_t config_value, 
+                                    usb_transfer_cb_t callback, void *context)
+{
+    return sendControlTransfer(
+        USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE,
+        USB_B_REQUEST_SET_CONFIGURATION,
+        config_value,
+        0,
+        0,
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::getConfiguration(usb_transfer_cb_t callback, void *context)
+{
+    return sendControlTransfer(
+        USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_DEVICE,
+        USB_B_REQUEST_GET_CONFIGURATION,
+        0,
+        0,
+        1,
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::setInterface(uint8_t interface, uint8_t alt_setting,
+                                usb_transfer_cb_t callback, void *context)
+{
+    return sendControlTransfer(
+        USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_INTERFACE,
+        USB_B_REQUEST_SET_INTERFACE,
+        alt_setting,
+        interface,
+        0,
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::getInterface(uint8_t interface,
+                                usb_transfer_cb_t callback, void *context)
+{
+    return sendControlTransfer(
+        USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD | USB_BM_REQUEST_TYPE_RECIP_INTERFACE,
+        USB_B_REQUEST_GET_INTERFACE,
+        0,
+        interface,
+        1,
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::clearFeature(uint8_t recipient, uint8_t feature, uint16_t index,
+                                usb_transfer_cb_t callback, void *context)
+{
+    uint8_t bmRequestType = USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_STANDARD;
+    
+    switch (recipient) {
+        case USB_BM_REQUEST_TYPE_RECIP_DEVICE:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_DEVICE;
+            break;
+        case USB_BM_REQUEST_TYPE_RECIP_INTERFACE:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_INTERFACE;
+            break;
+        case USB_BM_REQUEST_TYPE_RECIP_ENDPOINT:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_ENDPOINT;
+            break;
+        default:
+            ESP_LOGE(TAG, "clearFeature: invalid recipient");
+            return ESP_ERR_INVALID_ARG;
+    }
+
+    return sendControlTransfer(
+        bmRequestType,
+        USB_B_REQUEST_CLEAR_FEATURE,
+        feature,
+        index,
+        0,
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::setFeature(uint8_t recipient, uint8_t feature, uint16_t index,
+                              usb_transfer_cb_t callback, void *context)
+{
+    uint8_t bmRequestType = USB_BM_REQUEST_TYPE_DIR_OUT | USB_BM_REQUEST_TYPE_TYPE_STANDARD;
+    
+    switch (recipient) {
+        case USB_BM_REQUEST_TYPE_RECIP_DEVICE:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_DEVICE;
+            break;
+        case USB_BM_REQUEST_TYPE_RECIP_INTERFACE:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_INTERFACE;
+            break;
+        case USB_BM_REQUEST_TYPE_RECIP_ENDPOINT:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_ENDPOINT;
+            break;
+        default:
+            ESP_LOGE(TAG, "setFeature: invalid recipient");
+            return ESP_ERR_INVALID_ARG;
+    }
+
+    return sendControlTransfer(
+        bmRequestType,
+        USB_B_REQUEST_SET_FEATURE,
+        feature,
+        index,
+        0,
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::getStatus(uint8_t recipient, uint16_t index,
+                             usb_transfer_cb_t callback, void *context)
+{
+    uint8_t bmRequestType = USB_BM_REQUEST_TYPE_DIR_IN | USB_BM_REQUEST_TYPE_TYPE_STANDARD;
+    
+    switch (recipient) {
+        case USB_BM_REQUEST_TYPE_RECIP_DEVICE:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_DEVICE;
+            break;
+        case USB_BM_REQUEST_TYPE_RECIP_INTERFACE:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_INTERFACE;
+            break;
+        case USB_BM_REQUEST_TYPE_RECIP_ENDPOINT:
+            bmRequestType |= USB_BM_REQUEST_TYPE_RECIP_ENDPOINT;
+            break;
+        default:
+            ESP_LOGE(TAG, "getStatus: invalid recipient");
+            return ESP_ERR_INVALID_ARG;
+    }
+
+    return sendControlTransfer(
+        bmRequestType,
+        USB_B_REQUEST_GET_STATUS,
+        0,
+        index,
+        2, // Status is 2 bytes
+        nullptr,
+        callback,
+        context
+    );
+}
+
+esp_err_t USBhost::getDeviceDescriptorAsync(usb_transfer_cb_t callback, void *context)
+{
+    return getDescriptor(USB_W_VALUE_DT_DEVICE, 0, 0, USB_DEVICE_DESC_SIZE, callback, context);
+}
+
+esp_err_t USBhost::getConfigurationDescriptorAsync(uint8_t config_index, uint16_t length,
+                                                   usb_transfer_cb_t callback, void *context)
+{
+    return getDescriptor(USB_W_VALUE_DT_CONFIG, config_index, 0, length, callback, context);
+}
+
+esp_err_t USBhost::getStringDescriptorAsync(uint8_t string_index, uint16_t lang_id, uint16_t length,
+                                            usb_transfer_cb_t callback, void *context)
+{
+    return getDescriptor(USB_W_VALUE_DT_STRING, string_index, lang_id, length, callback, context);
+}
